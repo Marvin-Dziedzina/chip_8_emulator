@@ -124,10 +124,12 @@ impl CPU {
                 trace!("Jump to {}", self.program_counter);
             }
             0x2000 => {
+                self.stack.push(self.program_counter).expect(&format!(
+                    "Could not push ProgramCounter({}) on to the stack!",
+                    self.program_counter
+                ));
+
                 let nnn = opcode & 0xFFF;
-                self.stack
-                    .push(nnn)
-                    .expect("Could not push on to the stack!");
                 self.program_counter = nnn;
                 trace!("Call subroutine at {}", nnn);
             }
