@@ -76,7 +76,7 @@ impl Stack {
 
     /// Pushes data onto the stack.
     pub fn push(&mut self, data: u16) -> Result<(), MemoryError> {
-        if self.stack_pointer as usize >= self.stack.len() - 1 {
+        if self.stack_pointer as usize >= self.stack.len() {
             return Err(MemoryError::StackOverflow);
         };
 
