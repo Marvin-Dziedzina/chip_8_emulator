@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use log::{info, trace};
 use rand::Rng;
 
 use crate::{
@@ -14,6 +15,25 @@ use crate::{
     screen::Screen,
     timer::{DelayTimer, SoundTimer},
 };
+
+const SPRITES: [u8; 80] = [
+    0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+    0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+    0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+];
 
 #[derive(Debug)]
 pub struct CPU {
@@ -34,12 +54,20 @@ pub struct CPU {
 }
 impl CPU {
     pub fn new() -> Self {
+        let mut ram = RAM::new();
+        ram.write_buf(0, &SPRITES)
+            .expect("Could not load SPRITES into RAM!");
+
+        trace!("Loaded sprites into RAM.");
+
+        info!("Creating new CPU instance.");
+
         CPU {
             is_paused: false,
 
             clock_speed: 500.0,
             program_counter: 0x200,
-            ram: RAM::new(),
+            ram,
             stack: Stack::new(),
             sound_timer: SoundTimer::new(),
             delay_timer: DelayTimer::new(),
@@ -52,14 +80,20 @@ impl CPU {
     }
 
     pub fn load_rom(&mut self, data: &[u8]) -> Result<(), MemoryError> {
+        info!("Loading ROM.");
         self.ram.write_buf(0x200, data)
     }
 
     pub fn cycle(&mut self) {
+        trace!("--- New Cycle ---");
         let opcode = (self.ram.read(self.program_counter).unwrap() as u16) << 8
             | self.ram.read(self.program_counter + 1).unwrap() as u16;
 
+        trace!("OPCODE: {}", opcode);
+
         self.execute_instruction(opcode);
+
+        trace!("End of Cycle");
     }
 
     fn execute_instruction(&mut self, opcode: u16) {
@@ -72,44 +106,64 @@ impl CPU {
         // match instructions
         match opcode & 0xF000 {
             0x0000 => match opcode {
-                0x00E0 => self.screen.clear(),
+                0x00E0 => {
+                    trace!("Clearing screen.");
+                    self.screen.clear()
+                }
                 0x00EE => {
-                    self.program_counter = self.stack.pop().expect("Could not pop off of stack!")
+                    self.program_counter = self.stack.pop().expect("Could not pop off of stack!");
+                    trace!(
+                        "Return from a subroutine. New program counter: {}",
+                        self.program_counter
+                    );
                 }
                 x => panic!("Invalid instruction received! {}", x),
             },
-            0x1000 => self.program_counter = opcode & 0xFFF,
+            0x1000 => {
+                self.program_counter = opcode & 0xFFF;
+                trace!("Jump to {}", self.program_counter);
+            }
             0x2000 => {
                 let nnn = opcode & 0xFFF;
                 self.stack
                     .push(nnn)
                     .expect("Could not push on to the stack!");
                 self.program_counter = nnn;
+                trace!("Call subroutine at {}", nnn);
             }
             0x3000 => {
+                trace!("Skip next instruction if V({}) == KK.", x);
                 let vx = self.v.read(x).expect(&format!("Could not read V({})!", x));
                 let kk = (opcode & 0xFF) as u8;
+
                 if vx == kk {
+                    trace!("Skipping next instruction.");
                     self.increment_program_counter();
                 };
             }
             0x4000 => {
+                trace!("Skip next instruction if V({}) != KK.", x);
                 let vx = self.v.read(x).expect(&format!("Could not read V({})!", x));
                 let kk = (opcode & 0xFF) as u8;
+
                 if vx != kk {
+                    trace!("Skipping next instruction.");
                     self.increment_program_counter();
                 };
             }
             0x5000 => {
+                trace!("Skip next instruction if V({}) == V({}).", x, y);
                 let vx = self.v.read(x).expect(&format!("Could not read V({})!", x));
                 let vy = self.v.read(y).expect(&format!("Could not read V({})!", x));
 
                 if vx == vy {
+                    trace!("Skipping instruction.");
                     self.increment_program_counter();
                 };
             }
             0x6000 => {
                 let kk = (opcode & 0xFF) as u8;
+                trace!("Setting V({}) to {}", x, kk);
                 self.v
                     .write(x, kk)
                     .expect(&format!("Could not write {} to V({})", kk, x));
@@ -117,6 +171,7 @@ impl CPU {
             0x7000 => {
                 let vx = self.v.read(x).expect(&format!("Could not read V({})!", x));
                 let kk = (opcode & 0xFF) as u8;
+                trace!("Set V({}) to {} + {}", x, vx, kk);
                 self.v.write(x, vx + kk).expect(&format!(
                     "Could not write {} to V({})!",
                     vx + kk,
@@ -124,14 +179,17 @@ impl CPU {
                 ));
             }
             0x8000 => match opcode & 0xF {
-                0x0 => self
-                    .v
-                    .write(
-                        x,
-                        self.v.read(y).expect(&format!("Could not read V({})!", y)),
-                    )
-                    .expect(&format!("Could not write V({}) to V({})!", y, x)),
+                0x0 => {
+                    trace!("Set V({}) to V({})", x, y);
+                    self.v
+                        .write(
+                            x,
+                            self.v.read(y).expect(&format!("Could not read V({})!", y)),
+                        )
+                        .expect(&format!("Could not write V({}) to V({})!", y, x))
+                }
                 0x1 => {
+                    trace!("Set V({}) to V({}) | V({})", x, x, y);
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                     let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
                     self.v.write(x, vx | vy).expect(&format!(
@@ -141,6 +199,7 @@ impl CPU {
                     ));
                 }
                 0x2 => {
+                    trace!("Set V({}) to V({}) & V({})", x, x, y);
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                     let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
                     self.v.write(x, vx & vy).expect(&format!(
@@ -150,6 +209,7 @@ impl CPU {
                     ));
                 }
                 0x3 => {
+                    trace!("Set V({}) to V({}) ^ V({})", x, x, y);
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                     let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
                     self.v.write(x, vx ^ vy).expect(&format!(
@@ -165,6 +225,14 @@ impl CPU {
                     let result = (vx as u16).add(vy as u16);
 
                     let carry = if result > 0xFF { 1 } else { 0 };
+
+                    trace!(
+                        "Set V({}) = V({}) + V({}), set V(0xF) = Carry {}",
+                        x,
+                        x,
+                        y,
+                        carry
+                    );
 
                     // Set carry
                     self.v
@@ -182,11 +250,19 @@ impl CPU {
 
                     let result = vx.sub(vy);
 
-                    let carry = if vx > vy { 1 } else { 0 };
+                    let borrow = if vx > vy { 1 } else { 0 };
+
+                    trace!(
+                        "Set V({}) = V({}) - V({}), set V(0xF) = Borrow {}",
+                        x,
+                        x,
+                        y,
+                        borrow
+                    );
 
                     // Set carry
                     self.v
-                        .write(0xF, carry)
+                        .write(0xF, borrow)
                         .expect(&format!("Could not write carry to V({})!", 0xF));
 
                     self.v.write(x, result).expect(&format!(
@@ -197,18 +273,35 @@ impl CPU {
                 0x6 => {
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x)) & 0x1;
 
+                    trace!("Set V({}) = V({}) SHR 1", x, x);
+
                     self.v
                         .write(0xF, vx)
                         .expect(&format!("Could not write {} to V({})", vx, x));
+                    self.v
+                        .write(
+                            x,
+                            self.v.read(x).expect(&format!("Could not read V({})!", x)) >> 1,
+                        )
+                        .expect(&format!("Could not write to V({})", x));
                 }
                 0x7 => {
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                     let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
 
-                    let carry = if vy > vx { 1 } else { 0 };
+                    let borrow = if vy > vx { 1 } else { 0 };
+
+                    trace!(
+                        "Set V({}) = V({}) - V({}), set V(0xF) = Borrow {}",
+                        x,
+                        x,
+                        y,
+                        borrow
+                    );
+
                     self.v
-                        .write(0xF, carry)
-                        .expect(&format!("Could not write {} to V({})!", carry, 0xF));
+                        .write(0xF, borrow)
+                        .expect(&format!("Could not write {} to V({})!", borrow, 0xF));
 
                     let result = (vy as u16).sub(vx as u16);
                     self.v
@@ -217,6 +310,9 @@ impl CPU {
                 }
                 0xE => {
                     let vx = self.v.read(x).expect(&format!("Could not read V({})!", x));
+
+                    trace!("Set V({}) = V({}) SHL 1", x, x);
+
                     self.v.write(0xF, vx & 0x80).expect(&format!(
                         "Could not write {} to V({})!",
                         vx & 0x80,
@@ -234,24 +330,33 @@ impl CPU {
                 let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                 let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
 
+                trace!("Skip next instruction if V({}) != V({})", x, y);
+
                 if vx != vy {
+                    trace!("Skipping next instruction");
                     self.increment_program_counter();
                 };
             }
             0xA000 => {
-                self.i.write(opcode & 0xFFF);
+                let nnn = opcode & 0xFFF;
+                trace!("Set I = {}", nnn);
+                self.i.write(nnn);
             }
             0xB000 => {
-                self.program_counter = (opcode & 0xFFF)
-                    + self
-                        .v
-                        .read(0x0)
-                        .expect(&format!("Could not read V({})!", 0x0))
-                        as u16;
+                let nnn = opcode & 0xFFF;
+                let v0 = self
+                    .v
+                    .read(0x0)
+                    .expect(&format!("Could not read V({})!", 0x0));
+                self.program_counter = nnn + v0 as u16;
+
+                trace!("Jump to location {} + {} = {}", nnn, v0, nnn + v0 as u16);
             }
             0xC000 => {
                 let kk = (opcode & 0xFF) as u8;
                 let rand_num: u8 = rand::thread_rng().gen::<u8>();
+
+                trace!("Set V({}) = RAND BYTE {} & {}", x, rand_num, kk);
 
                 self.v.write(x, rand_num & kk).expect(&format!(
                     "Could not write {} to V({})!",
@@ -263,125 +368,160 @@ impl CPU {
                 const width: u8 = 8;
                 let height = (opcode & 0xF) as u8;
 
+                trace!("Display n-byte sprite starting at memory location I at (V({}), V({})), set V(0xF) = Collision {}", x, y, -1);
+
                 todo!("Draw sprite!");
             }
             0xE000 => {
                 match opcode & 0xFF {
                     0x9E => {
+                        trace!(
+                            "Skip next instruction if key with the value of V({}) is pressed",
+                            x
+                        );
                         if self.keyboard.is_key_pressed(
                             self.v.read(x).expect(&format!("Could not read V({})!", x)),
                         ) {
+                            trace!("Skipping next instruction");
                             self.increment_program_counter();
                         };
                     }
                     0xA1 => {
+                        trace!(
+                            "Skip next instruction if key with the value of V({}) is not pressed",
+                            x
+                        );
                         if !self.keyboard.is_key_pressed(
                             self.v.read(x).expect(&format!("Could not read V({})!", x)),
                         ) {
+                            trace!("Skipping next instruction");
                             self.increment_program_counter();
                         };
                     }
                     x => panic!("Invalid instruction received! {}", x),
                 }
             }
-            0xF000 => match opcode & 0xFF {
-                0x0F => self.v.write(x, self.delay_timer.read()).expect(&format!(
-                    "Could not write {} to V({})!",
-                    self.delay_timer.read(),
-                    x
-                )),
-                0x0A => {
-                    self.is_paused = true;
+            0xF000 => {
+                match opcode & 0xFF {
+                    0x0F => {
+                        let delay_timer = self.delay_timer.read();
+                        trace!("Set V({}) = Delay Timer {}", x, delay_timer);
+                        self.v.write(x, self.delay_timer.read()).expect(&format!(
+                            "Could not write {} to V({})!",
+                            self.delay_timer.read(),
+                            x
+                        ))
+                    }
+                    0x0A => {
+                        self.is_paused = true;
 
-                    let key = self.keyboard.wait_for_key();
-                    self.v
-                        .write(x, key)
-                        .expect(&format!("Could not write {} to V({})!", key, x));
-                }
-                0x15 => {
-                    self.delay_timer
-                        .write(self.v.read(x).expect(&format!("Could not read V({})!", x)));
-                }
-                0x18 => {
-                    self.sound_timer
-                        .write(self.v.read(x).expect(&format!("Could not read V({})!", x)));
-                }
-                0x1E => {
-                    self.i.write(
-                        self.i.read()
-                            + self.v.read(x).expect(&format!("Could not read V({})!", x)) as u16,
-                    );
-                }
-                0x29 => {
-                    self.i.write(
-                        self.v.read(x).expect(&format!("Could not read V({})!", x)) as u16 * 5,
-                    );
-                }
-                0x33 => {
-                    self.ram
-                        .write(
-                            self.i.read(),
-                            // Get hundrets digit.
-                            self.v.read(x).expect(&format!("Could not read V({})!", x)) / 100,
-                        )
-                        .expect(&format!("Could not write RAM({})!", x));
+                        trace!("Wait for a key press");
 
-                    self.ram
-                        .write(
-                            self.i
-                                .read()
-                                .checked_add(1)
-                                .expect(&format!("Could not add 1 to I {}!", self.i.read())),
-                            // Get value of the tens digit.
-                            (self.v.read(x).expect(&format!("Could not read V({})!", x)) % 100)
-                                / 10,
-                        )
-                        .expect(&format!("Could not write RAM({})!", x));
-
-                    self.ram
-                        .write(
-                            self.i
-                                .read()
-                                .checked_add(2)
-                                .expect(&format!("Could not add 2 to I {}!", self.i.read())),
-                            // Get value of the ones digit
-                            self.v.read(x).expect(&format!("Could not read V({})!", x)) % 10,
-                        )
-                        .expect(&format!("Could not write RAM({})!", x));
-                }
-                0x55 => self
-                    .ram
-                    .write_buf(
-                        self.i.read(),
+                        let key = self.keyboard.wait_for_key();
                         self.v
-                            .read_range(0, x)
-                            .expect(&format!("Could not read range V(0, {})!", x)),
-                    )
-                    .expect(&format!(
-                        "Could not write V(0, {}) in RAM({}, {})!",
-                        x,
-                        self.i.read(),
-                        self.i.read() + x as u16
-                    )),
-                0x65 => self
-                    .v
-                    .write_buf(
-                        0,
+                            .write(x, key)
+                            .expect(&format!("Could not write {} to V({})!", key, x));
+
+                        trace!(
+                            "Key {} pressed, stored the value of the key in V({})",
+                            key,
+                            x
+                        );
+
+                        self.is_paused = false;
+                    }
+                    0x15 => {
+                        trace!("Set delay timer = V({})", x);
+                        self.delay_timer
+                            .write(self.v.read(x).expect(&format!("Could not read V({})!", x)));
+                    }
+                    0x18 => {
+                        trace!("Set sound timer = V({})", x);
+                        self.sound_timer
+                            .write(self.v.read(x).expect(&format!("Could not read V({})!", x)));
+                    }
+                    0x1E => {
+                        trace!("Set I = I{} + V({})", self.i.read(), x);
+                        self.i.write(
+                            self.i.read()
+                                + self.v.read(x).expect(&format!("Could not read V({})!", x))
+                                    as u16,
+                        );
+                    }
+                    0x29 => {
+                        trace!("Set I = location of sprite for digit V({})", x);
+                        self.i.write(
+                            self.v.read(x).expect(&format!("Could not read V({})!", x)) as u16 * 5,
+                        );
+                    }
+                    0x33 => {
+                        let i = self.i.read();
+                        trace!("Store BCD representation of V({}) in memory locations I{}, I{}+1, and I{}+2", x, i, i, i);
+
                         self.ram
-                            .read_range(self.i.read(), x as u16)
+                            .write(
+                                i,
+                                // Get hundrets digit.
+                                self.v.read(x).expect(&format!("Could not read V({})!", x)) / 100,
+                            )
+                            .expect(&format!("Could not write RAM({})!", x));
+
+                        self.ram
+                            .write(
+                                i.checked_add(1)
+                                    .expect(&format!("Could not add 1 to I {}!", i)),
+                                // Get value of the tens digit.
+                                (self.v.read(x).expect(&format!("Could not read V({})!", x)) % 100)
+                                    / 10,
+                            )
+                            .expect(&format!("Could not write RAM({})!", x));
+
+                        self.ram
+                            .write(
+                                i.checked_add(2)
+                                    .expect(&format!("Could not add 2 to I {}!", i)),
+                                // Get value of the ones digit
+                                self.v.read(x).expect(&format!("Could not read V({})!", x)) % 10,
+                            )
+                            .expect(&format!("Could not write RAM({})!", x));
+                    }
+                    0x55 => {
+                        let i = self.i.read();
+                        trace!(
+                            "Store registers V(0) through V({}) in memory starting at location I{}",
+                            x,
+                            i
+                        );
+                        self.ram
+                            .write_buf(
+                                i,
+                                self.v
+                                    .read_range(0, x)
+                                    .expect(&format!("Could not read range V(0, {})!", x)),
+                            )
                             .expect(&format!(
-                                "Could not read range from RAM({}, {})!",
-                                self.i.read(),
-                                x
-                            )),
-                    )
-                    .expect(&format!(
-                        "Could not write RAM({}, {}) to V(0)!",
-                        self.i.read(),
-                        x
-                    )),
-                x => panic!("Invalid instruction received! {}", x),
-            },
+                                "Could not write V(0, {}) in RAM({}, {})!",
+                                x,
+                                i,
+                                i + x as u16
+                            ))
+                    }
+                    0x65 => {
+                        let i = self.i.read();
+                        trace!("Read registers V(0) through V({}) from memory starting at location I{}", x, i);
+                        self.v
+                            .write_buf(
+                                0,
+                                self.ram.read_range(i, x as u16).expect(&format!(
+                                    "Could not read range from RAM({}, {})!",
+                                    i, x
+                                )),
+                            )
+                            .expect(&format!("Could not write RAM({}, {}) to V(0)!", i, x))
+                    }
+                    x => panic!("Invalid instruction received! {}", x),
+                }
+            }
             x => panic!("Invalid instruction received! {}", x),
         };
     }
@@ -397,6 +537,7 @@ impl CPU {
             };
 
             if let Some(waiting_duration) = clock_duration.checked_sub(start.elapsed()) {
+                trace!("Waiting {} ms", waiting_duration.as_millis());
                 thread::sleep(waiting_duration);
             };
         }
@@ -404,5 +545,6 @@ impl CPU {
 
     fn increment_program_counter(&mut self) {
         self.program_counter += 2;
+        trace!("Incremented Program Counter.");
     }
 }

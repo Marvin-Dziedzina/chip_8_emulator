@@ -1,5 +1,7 @@
 use std::fs;
 
+use log::info;
+
 use crate::cpu::CPU;
 
 pub struct Emulator {
@@ -17,6 +19,7 @@ impl Emulator {
     }
 
     pub fn start(&mut self) {
+        info!("Started CPU clock");
         self.cpu.clock();
     }
 }

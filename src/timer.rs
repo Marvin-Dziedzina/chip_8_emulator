@@ -70,13 +70,15 @@ fn decrement60hz(value: Arc<Mutex<u8>>) {
     loop {
         let start = Instant::now();
 
-        let mut value_lock = value.lock().unwrap_or_else(|p| p.into_inner());
+        {
+            let mut value_lock = value.lock().unwrap_or_else(|p| p.into_inner());
 
-        if *value_lock > 0 {
-            *value_lock -= 1;
-        } else {
-            break;
-        };
+            if *value_lock > 0 {
+                *value_lock -= 1;
+            } else {
+                break;
+            };
+        }
 
         if let Some(sleep_duration) = target_duration.checked_sub(start.elapsed()) {
             thread::sleep(sleep_duration);
