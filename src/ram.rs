@@ -17,7 +17,6 @@ impl io::Read for RAM {
     type Address = u16;
 
     fn read(&self, address: u16) -> Result<u8, MemoryError> {
-        println!("Value: {}", address);
         self.memory
             .get(address as usize)
             .copied()
