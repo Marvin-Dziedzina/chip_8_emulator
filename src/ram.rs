@@ -97,7 +97,7 @@ impl Stack {
 
         self.stack_pointer -= 1;
         self.stack
-            .get(self.stack_pointer as usize + 1)
+            .get(self.stack_pointer as usize)
             .cloned()
             .ok_or(MemoryError::DoesNotExist)
     }
