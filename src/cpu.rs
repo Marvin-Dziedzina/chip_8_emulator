@@ -86,6 +86,8 @@ impl CPU {
 
     pub fn cycle(&mut self) {
         trace!("--- New Cycle ---");
+        trace!("Program Counter: {}", self.program_counter);
+
         let opcode = (self.ram.read(self.program_counter).unwrap() as u16) << 8
             | self.ram.read(self.program_counter + 1).unwrap() as u16;
 
@@ -367,12 +369,8 @@ impl CPU {
                 ));
             }
             0xD000 => {
-                const width: u8 = 8;
-                let height = (opcode & 0xF) as u8;
-
                 trace!("Display n-byte sprite starting at memory location I at (V({}), V({})), set V(0xF) = Collision {}", x, y, -1);
-
-                todo!("Draw sprite!");
+                self.screen.draw();
             }
             0xE000 => {
                 match opcode & 0xFF {
