@@ -176,9 +176,9 @@ impl CPU {
                 let vx = self.v.read(x).expect(&format!("Could not read V({})!", x));
                 let kk = (opcode & 0xFF) as u8;
                 trace!("Set V({}) to {} + {}", x, vx, kk);
-                self.v.write(x, vx + kk).expect(&format!(
+                self.v.write(x, vx.wrapping_add(kk)).expect(&format!(
                     "Could not write {} to V({})!",
-                    vx + kk,
+                    vx as u16 + kk as u16,
                     x
                 ));
             }
@@ -252,24 +252,26 @@ impl CPU {
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                     let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
 
-                    let result = vx.sub(vy);
-
-                    let borrow = if vx > vy { 1 } else { 0 };
+                    let borrow = if vx >= vy { 1 } else { 0 };
 
                     trace!(
-                        "Set V({}) = V({}) - V({}), set V(0xF) = Borrow {}",
+                        "Set V({}) = V({}) {} - V({}) {}, set V(0xF) = Borrow {}",
                         x,
                         x,
+                        vx,
                         y,
+                        vy,
                         borrow
                     );
+
+                    let result = vx.wrapping_sub(vy);
 
                     // Set carry
                     self.v
                         .write(0xF, borrow)
                         .expect(&format!("Could not write carry to V({})!", 0xF));
 
-                    self.v.write(x, result).expect(&format!(
+                    self.v.write(x, result as u8).expect(&format!(
                         "Could not write sum of {} and {} to V({})!",
                         vx, vy, x
                     ));
@@ -403,6 +405,15 @@ impl CPU {
             }
             0xF000 => {
                 match opcode & 0xFF {
+                    0x07 => {
+                        let delaytimer_value = self.delay_timer.read();
+                        trace!("Write delaytimer {} into V({})", delaytimer_value, x);
+
+                        self.v.write(x, delaytimer_value).expect(&format!(
+                            "Could not write delaytimer {} into v({})!",
+                            delaytimer_value, x
+                        ));
+                    }
                     0x0F => {
                         let delay_timer = self.delay_timer.read();
                         trace!("Set V({}) = Delay Timer {}", x, delay_timer);
@@ -442,11 +453,9 @@ impl CPU {
                     }
                     0x1E => {
                         trace!("Set I = I{} + V({})", self.i.read(), x);
-                        self.i.write(
-                            self.i.read()
-                                + self.v.read(x).expect(&format!("Could not read V({})!", x))
-                                    as u16,
-                        );
+                        self.i.write(self.i.read().wrapping_add(
+                            self.v.read(x).expect(&format!("Could not read V({})!", x)) as u16,
+                        ));
                     }
                     0x29 => {
                         trace!("Set I = location of sprite for digit V({})", x);
@@ -537,7 +546,7 @@ impl CPU {
             };
 
             if let Some(waiting_duration) = clock_duration.checked_sub(start.elapsed()) {
-                trace!("Waiting {} ms", waiting_duration.as_millis());
+                trace!("Waiting {} ns", waiting_duration.as_nanos());
                 thread::sleep(waiting_duration);
             };
         }
