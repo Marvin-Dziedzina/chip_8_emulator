@@ -14,7 +14,7 @@ impl SoundTimer {
         }
     }
 
-    pub fn write(&self, value: u8) -> Result<(), SoundError> {
+    pub fn write(&self, value: u8) {
         let value_c = self.value.clone();
 
         let mut value_lock = self.value.lock().unwrap_or_else(|p| p.into_inner());
@@ -25,8 +25,6 @@ impl SoundTimer {
                 decrement60hz(value_c);
             });
         };
-
-        Ok(())
     }
 
     pub fn read(&self) -> u8 {
