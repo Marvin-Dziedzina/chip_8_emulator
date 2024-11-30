@@ -1,8 +1,8 @@
-use std::env;
+use std::{env, fs};
 
-use chip8::Emulator;
+use cpu::CPU;
+use log::error;
 
-mod chip8;
 mod cpu;
 mod io;
 mod keyboard;
@@ -18,11 +18,16 @@ fn main() {
 
     if args.len() < 2 {
         eprintln!("Usage: {} <program_path>", args[0]);
+        error!("No arguments given!");
         std::process::exit(1);
     };
 
     let program_path: String = args[args.len() - 1].clone();
 
-    let mut emulator = Emulator::new(program_path);
-    emulator.start();
+    let program = fs::read(program_path).expect("Failed to read program!");
+
+    let mut cpu = CPU::new();
+    cpu.load_rom(&program)
+        .expect("Could not load ROM into RAM!");
+    cpu.clock();
 }

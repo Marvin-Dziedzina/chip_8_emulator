@@ -1,3 +1,8 @@
+use log::trace;
+
+const COLLUMNS: usize = 64;
+const ROWS: usize = 32;
+
 #[derive(Debug)]
 pub struct Screen {
     screen: [u8; 64 * 32],
@@ -6,15 +11,20 @@ pub struct Screen {
 impl Screen {
     pub fn new() -> Self {
         Screen {
-            screen: [0u8; 64 * 32],
+            screen: [0u8; COLLUMNS * ROWS],
         }
     }
 
     pub fn clear(&mut self) {
-        self.screen = [0u8; 64 * 32]
+        self.screen = [0u8; COLLUMNS * ROWS]
     }
 
-    pub fn render(&mut self) -> Result<(), ()> {
+    pub fn draw(&mut self) {
+        //todo!("Draw sprite onto screen.");
+        trace!("Fake Drawing!");
+    }
+
+    pub fn render(&mut self) {
         todo!("Add screen render capabilities.")
     }
 }

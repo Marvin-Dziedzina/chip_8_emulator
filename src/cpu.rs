@@ -35,7 +35,6 @@ const SPRITES: [u8; 80] = [
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
-#[derive(Debug)]
 pub struct CPU {
     is_paused: bool,
 
@@ -84,7 +83,7 @@ impl CPU {
         self.ram.write_buf(0x200, data)
     }
 
-    pub fn cycle(&mut self) {
+    fn cycle(&mut self) {
         trace!("--- New Cycle ---");
         trace!("Program Counter: {}", self.program_counter);
 
@@ -119,7 +118,15 @@ impl CPU {
                         self.program_counter
                     );
                 }
-                x => panic!("Invalid instruction received! {}", x),
+                _ => {
+                    // Instruction 0nnn
+
+                    let nnn = opcode & 0xFFF;
+
+                    trace!("Set ProgramCounter to {}", nnn);
+
+                    self.program_counter = nnn;
+                }
             },
             0x1000 => {
                 self.program_counter = opcode & 0xFFF;
@@ -226,9 +233,13 @@ impl CPU {
                     let vx = self.v.read(x).expect(&format!("Could not read V({})", x));
                     let vy = self.v.read(y).expect(&format!("Could not read V({})", y));
 
-                    let result = (vx as u16).add(vy as u16);
+                    let result = vx.wrapping_add(vy);
 
-                    let carry = if result > 0xFF { 1 } else { 0 };
+                    let carry = if vx as u16 + vy as u16 > u8::MAX as u16 {
+                        1
+                    } else {
+                        0
+                    };
 
                     trace!(
                         "Set V({}) = V({}) + V({}), set V(0xF) = Carry {}",
@@ -309,7 +320,7 @@ impl CPU {
                         .write(0xF, borrow)
                         .expect(&format!("Could not write {} to V({})!", borrow, 0xF));
 
-                    let result = (vy as u16).sub(vx as u16);
+                    let result = vy.wrapping_sub(vx);
                     self.v
                         .write(x, result as u8)
                         .expect(&format!("Could not write {} to V({})!", result, x));
