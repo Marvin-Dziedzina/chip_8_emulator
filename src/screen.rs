@@ -1,4 +1,4 @@
-use log::trace;
+use bevy::prelude::*;
 
 const COLLUMNS: usize = 64;
 const ROWS: usize = 32;
@@ -20,11 +20,7 @@ impl Screen {
     }
 
     pub fn draw(&mut self) {
-        //todo!("Draw sprite onto screen.");
-        trace!("Fake Drawing!");
-    }
-
-    pub fn render(&mut self) {
-        todo!("Add screen render capabilities.")
+        todo!("Draw sprite onto screen.");
+        //debug!("Fake Drawing!");
     }
 }
